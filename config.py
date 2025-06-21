@@ -47,6 +47,28 @@ GRIPPE_DATE_COL = 'EDATE'      # Raw column name for date in influenza file
 GRIPPE_CASES_COL = 'ALL_INF'   # Raw column name for cases in influenza file
 GRIPPE_DEATHS_COL = None # No specific death column identified in the provided list
 
+# --- Zika Specific ---
+ZIKA_DATA_FILE = "disease\\enhanced_zika_data_large.csv"
+ZIKA_COUNTRY_COL = 'country'   # Raw column name for country in Zika file
+ZIKA_DATE_COL = 'date'         # Raw column name for date in Zika file
+ZIKA_CASES_COL = 'cases'       # Raw column name for cases in Zika file
+ZIKA_DEATHS_COL = 'deaths'     # Raw column name for deaths in Zika file
+ZIKA_RELEVANT_COLUMNS = [ # Similar to COVID_RELEVANT_COLUMNS
+    'date', 'country', 'cases', 'deaths', 'population_density',
+    'total_cases', 'new_cases_smoothed', 'total_deaths', 'new_deaths_smoothed',
+    'hosp_patients', 'weekly_hosp_admissions', 'icu_patients', 'stringency_index',
+    'reproduction_rate', 'total_tests', 'new_tests', 'positive_rate',
+    'tests_per_case', 'total_vaccinations', 'people_vaccinated',
+    'people_fully_vaccinated', 'population', 'median_age', 'gdp_per_capita',
+    'continent', 'life_expectancy'
+]
+ALLOWED_ZIKA_COUNTRIES = [
+    'United States', 'Brazil', 'France', 'Germany', 'Italy', 'Spain',
+    'United Kingdom', 'China', 'Russia', 'India', 'Japan', 'South Korea', 
+    'South Africa', 'Mexico', 'Canada', 'Australia', 'Turkey',
+    'Saudi Arabia', 'Algeria', 'Morocco'
+]
+
 # --- Plotting ---
 HISTORICAL_CONTEXT_DAYS = 120
 DARK_PLOT_STYLE = {
@@ -85,10 +107,10 @@ PREDICTION_MAX_DAYS = 730
 PREDICTION_DEFAULT_DAYS = 360
 
 # --- UI ---
-APP_TITLE = "EpiForecast Dark v1.18" # Increment version
+APP_TITLE = "EpiForecast v1.19" # version
 WINDOW_GEOMETRY = "1450x900"
 AVAILABLE_DISEASES = [
-    "COVID-19", "Grippe", # Add others !!!!!!
+    "COVID-19", "Grippe", "Zika", # Added Zika disease
 ]
 # Options for the target selector Combobox
 ANALYSIS_TARGETS = ["Cases", "Deaths"]

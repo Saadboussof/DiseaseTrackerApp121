@@ -85,6 +85,49 @@ def load_real_influenza_data(file_path=config.GRIPPE_DATA_SOURCE):
         raise # Re-raise the exception
 
 
+def load_zika_data(file_path=config.ZIKA_DATA_FILE):
+    """
+    Loads the enhanced Zika virus data file.
+    Checks for essential columns and additional COVID-like columns if available.
+    Returns the entire raw DataFrame for later filtering.
+    """
+    full_path = os.path.abspath(file_path)
+    print(f"[Zika Loader] Attempting to load ALL Zika data from: {full_path}")
+    try:
+        df = pd.read_csv(file_path)
+
+        if df.empty:
+            raise ValueError(f"The file '{file_path}' is empty.")
+        print(f"[Zika Loader] Raw data loaded successfully. Shape: {df.shape}")
+
+        # Check required columns exist in the file
+        required_raw_cols = [config.ZIKA_COUNTRY_COL, config.ZIKA_DATE_COL, 
+                            config.ZIKA_CASES_COL, config.ZIKA_DEATHS_COL]
+        missing_raw = [col for col in required_raw_cols if col not in df.columns]
+        if missing_raw:
+            raise ValueError(f"Missing required columns in the Zika file: {missing_raw}. Found: {list(df.columns)}")
+        print(f"[Zika Loader] Essential raw columns ({required_raw_cols}) found.")
+        
+        # Check for enhanced columns (not required, but useful to report)
+        if hasattr(config, 'ZIKA_RELEVANT_COLUMNS'):
+            available_enhanced = [col for col in config.ZIKA_RELEVANT_COLUMNS if col in df.columns]
+            if len(available_enhanced) > len(required_raw_cols):
+                print(f"[Zika Loader] Enhanced dataset detected with {len(available_enhanced)} additional columns")
+            else:
+                print("[Zika Loader] Basic dataset detected with minimal columns")
+
+        # Return the full DataFrame - preprocessing happens later for selected country
+        print(f"[Zika Loader] Raw Zika data load complete. Returning full DataFrame.")
+        return df
+
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Error: Zika file '{file_path}' not found at {full_path}.")
+    except Exception as e:
+        print(f"[Zika Loader] Error reading Zika file '{file_path}': {e}")
+        traceback.print_exc()
+        raise # Re-raise the exception
+
+
 def simulate_disease_data(disease_name):
     """Generates simulated data for demonstration (always represents 'cases')."""
     print(f"[SIM Loader] Simulating data for: {disease_name}")
@@ -144,6 +187,15 @@ def get_data_source(disease_name):
             return load_real_influenza_data()
         except Exception as e:
             print(f"[Data Dispatcher] Error loading REAL Grippe data: {e}. Falling back to SIMULATION.")
+            # Fallback returns DataFrame with 'date', 'cases'
+            return simulate_disease_data(disease_name)
+            
+    elif disease_name == "Zika":
+        try:
+            # Returns the full raw Zika DataFrame
+            return load_zika_data()
+        except Exception as e:
+            print(f"[Data Dispatcher] Error loading REAL Zika data: {e}. Falling back to SIMULATION.")
             # Fallback returns DataFrame with 'date', 'cases'
             return simulate_disease_data(disease_name)
 

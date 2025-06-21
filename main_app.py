@@ -80,6 +80,7 @@ class DarkThemedDiseaseApp:
         # Data storage
         self.raw_covid_data = None
         self.raw_influenza_data = None
+        self.raw_zika_data = None
         self.disease_data = None # Holds *processed* data for the *selected* target/country
         self.model = None
         self.scaler_X = None
@@ -93,6 +94,7 @@ class DarkThemedDiseaseApp:
 
         self.allowed_covid_countries_in_data = []
         self.allowed_influenza_countries_in_data = []
+        self.allowed_zika_countries_in_data = []
         self.available_diseases = ["Select Disease"] + config.AVAILABLE_DISEASES # Add placeholder
         self.available_targets = config.ANALYSIS_TARGETS
 
@@ -367,11 +369,26 @@ class DarkThemedDiseaseApp:
     def show_view(self, view_name):
         """Raises the selected view frame and updates sidebar button state."""
         if view_name in self.view_frames:
+            # Préparer la transition - garder une référence de la vue actuelle
+            old_view_name = self.active_view_name.get()
+            
+            # Mettre à jour l'état avant le changement
             frame = self.view_frames[view_name]
+            
+            # Préparer la vue avant le changement
+            frame.update_idletasks()
+            
+            # Afficher la nouvelle vue
             frame.tkraise()
             self.active_view_name.set(view_name)
             print(f"[UI] Switched to view: {view_name}")
             self._update_sidebar_button_state(view_name)
+            
+            # S'assurer que la nouvelle vue a la bonne taille
+            frame.update_idletasks()
+            
+            # Forcer une mise à jour pour éviter les problèmes d'affichage
+            self.root.update_idletasks()
             
             # When returning to dashboard, refresh its statistics from the most recent analysis
             if view_name == "dashboard" and self.disease_data is not None and self.current_target_col_name is not None:
@@ -492,12 +509,13 @@ class DarkThemedDiseaseApp:
         already_loaded = False
         if disease == "COVID-19" and self.raw_covid_data is not None: already_loaded=True
         elif disease == "Grippe" and self.raw_influenza_data is not None: already_loaded=True
+        elif disease == "Zika" and self.raw_zika_data is not None: already_loaded=True
         # Add checks for other non-simulated diseases if implemented
 
         if already_loaded:
             status_msg=f"{disease} data already loaded. "
             # Update status and UI states to reflect loaded data and prompt for next steps
-            if disease in ["COVID-19", "Grippe"]: status_msg += "Select Country"
+            if disease in ["COVID-19", "Grippe", "Zika"]: status_msg += "Select Country"
             if disease == "COVID-19": status_msg += f" & Target ({self.selected_target.get()})"
             status_msg += ", then Analyze. Or 'Export Cleaned'."
 
@@ -519,6 +537,9 @@ class DarkThemedDiseaseApp:
         elif disease == "Grippe":
             self.raw_influenza_data = None
             self.allowed_influenza_countries_in_data = []
+        elif disease == "Zika":
+            self.raw_zika_data = None
+            self.allowed_zika_countries_in_data = []
         # Selections were reset earlier
 
         # Start the data loading thread
@@ -552,7 +573,7 @@ class DarkThemedDiseaseApp:
             # More specific message needed if analyze isn't ready
             disease = self.current_disease.get()
             if disease == "Select Disease": status_msg += "Select Disease first."
-            elif disease in ["COVID-19", "Grippe"]: status_msg += "Data loaded. Analyze ready." # Should be ready if country selected
+            elif disease in ["COVID-19", "Grippe", "Zika"]: status_msg += "Data loaded. Analyze ready." # Should be ready if country selected
             else: status_msg += "Check selections."
         if self.status_bar: self.status_bar.set_status(status_msg)
 
@@ -580,7 +601,7 @@ class DarkThemedDiseaseApp:
              status_msg += "Click 'Analyze' to process and view results."
         else:
             if disease == "Select Disease": status_msg += "Select a disease first."
-            elif disease in ["COVID-19", "Grippe"] and self.selected_country.get() == "Select Country": status_msg += "Select a country first."
+            elif disease in ["COVID-19", "Grippe", "Zika"] and self.selected_country.get() == "Select Country": status_msg += "Select a country first."
             # Data should be loaded if target selector is enabled, so no need to check raw_data here
             else: status_msg += "Check selections."
 
@@ -590,136 +611,166 @@ class DarkThemedDiseaseApp:
 
     def _update_ui_element_states(self):
         """Central function to update the state (enabled/disabled/values) and layout of header controls."""
-        disease = self.current_disease.get()
-        country = self.selected_country.get()
-        target = self.selected_target.get()
+        try:
+            disease = self.current_disease.get()
+            country = self.selected_country.get()
+            target = self.selected_target.get()
 
-        # --- Determine if raw data is loaded ---
-        raw_covid_loaded = self.raw_covid_data is not None and self.allowed_covid_countries_in_data
-        raw_grippe_loaded = self.raw_influenza_data is not None and self.allowed_influenza_countries_in_data
-        any_raw_data_loaded = raw_covid_loaded or raw_grippe_loaded
+            # --- Determine if raw data is loaded ---
+            raw_covid_loaded = self.raw_covid_data is not None and self.allowed_covid_countries_in_data
+            raw_grippe_loaded = self.raw_influenza_data is not None and self.allowed_influenza_countries_in_data
+            raw_zika_loaded = self.raw_zika_data is not None and self.allowed_zika_countries_in_data
+            any_raw_data_loaded = raw_covid_loaded or raw_grippe_loaded or raw_zika_loaded
 
-        # --- Country Combobox State ---
-        show_country_selector = False
-        enable_country_selector = False
-        country_list = ["Select Country"]
+            # --- Country Combobox State ---
+            show_country_selector = False
+            enable_country_selector = False
+            country_list = ["Select Country"]
 
-        if disease in ["COVID-19", "Grippe"] and disease != "Select Disease":
-            show_country_selector = True
-            if disease == "COVID-19" and raw_covid_loaded:
-                enable_country_selector = True
-                country_list.extend(self.allowed_covid_countries_in_data)
-            elif disease == "Grippe" and raw_grippe_loaded:
-                enable_country_selector = True
-                country_list.extend(self.allowed_influenza_countries_in_data)
+            if disease in ["COVID-19", "Grippe", "Zika"] and disease != "Select Disease":
+                show_country_selector = True
+                if disease == "COVID-19" and raw_covid_loaded:
+                    enable_country_selector = True
+                    country_list.extend(self.allowed_covid_countries_in_data)
+                elif disease == "Grippe" and raw_grippe_loaded:
+                    enable_country_selector = True
+                    country_list.extend(self.allowed_influenza_countries_in_data)
+                elif disease == "Zika" and raw_zika_loaded:
+                    enable_country_selector = True
+                    country_list.extend(self.allowed_zika_countries_in_data)
 
-        # Update Country Combobox Visibility & State
-        if self.country_combobox:
-            current_country_state = self.country_combobox.cget('state')
-            new_country_state = "readonly" if enable_country_selector else "disabled"
+            # Update Country Combobox Visibility & State
+            if self.country_combobox:
+                current_country_state = self.country_combobox.cget('state')
+                new_country_state = "readonly" if enable_country_selector else "disabled"
 
-            if show_country_selector:
-                if not self.country_combobox.winfo_ismapped():
-                    self.country_combobox.pack(side="left", padx=(0, 15), pady=15, ipady=2)
-                    self.country_combobox.pack_configure(before=self.target_combobox if self.target_combobox and self.target_combobox.winfo_ismapped() else self.load_button)
+                if show_country_selector:
+                    if not self.country_combobox.winfo_ismapped():
+                        self.country_combobox.pack(side="left", padx=(0, 15), pady=15, ipady=2)
+                        self.country_combobox.pack_configure(before=self.target_combobox if self.target_combobox and self.target_combobox.winfo_ismapped() else self.load_button)
 
-                if current_country_state != new_country_state:
-                    self.country_combobox.config(state=new_country_state)
-                if list(self.country_combobox['values']) != country_list:
-                     self.country_combobox.config(values=country_list)
+                    if current_country_state != new_country_state:
+                        self.country_combobox.config(state=new_country_state)
+                    if list(self.country_combobox['values']) != country_list:
+                         self.country_combobox.config(values=country_list)
 
-                valid_selections = self.allowed_covid_countries_in_data + self.allowed_influenza_countries_in_data
-                if new_country_state == "disabled" or (country != "Select Country" and country not in valid_selections):
+                    valid_selections = self.allowed_covid_countries_in_data + self.allowed_influenza_countries_in_data + self.allowed_zika_countries_in_data
+                    if new_country_state == "disabled" or (country != "Select Country" and country not in valid_selections):
+                        if self.selected_country.get() != "Select Country":
+                            self.selected_country.set("Select Country")
+                else:
+                    if self.country_combobox.winfo_ismapped():
+                        self.country_combobox.pack_forget()
                     if self.selected_country.get() != "Select Country":
                         self.selected_country.set("Select Country")
-            else:
-                if self.country_combobox.winfo_ismapped():
-                    self.country_combobox.pack_forget()
-                if self.selected_country.get() != "Select Country":
-                    self.selected_country.set("Select Country")
-            self._update_combobox_color(widget=self.country_combobox)
+            
+            # --- Target Combobox State ---
+            show_target_selector = False
+            enable_target_selector = False
+            target_list = config.ANALYSIS_TARGETS
+            if (disease == "COVID-19" and raw_covid_loaded) or (disease == "Zika" and raw_zika_loaded):
+                 show_target_selector = True
+                 enable_target_selector = True
 
-        # --- Target Combobox State ---
-        show_target_selector = False
-        enable_target_selector = False
-        target_list = config.ANALYSIS_TARGETS
-
-        if disease == "COVID-19" and raw_covid_loaded:
-             show_target_selector = True
-             enable_target_selector = True
-
-        # Update Target Combobox Visibility & State
-        if self.target_combobox:
-            current_target_state = self.target_combobox.cget('state')
-            new_target_state = "readonly" if enable_target_selector else "disabled"
-
-            if show_target_selector:
-                if not self.target_combobox.winfo_ismapped():
-                    self.target_combobox.pack(side="left", padx=(0, 15), pady=15, ipady=2)
-                    # *** Position Target Combo BEFORE Analyze button ***
-                    self.target_combobox.pack_configure(before=self.analyze_button)
-
-                if current_target_state != new_target_state:
-                    self.target_combobox.config(state=new_target_state)
-                if list(self.target_combobox['values']) != target_list:
-                     self.target_combobox.config(values=target_list)
-
-                if new_target_state == "disabled":
-                    if self.selected_target.get() != config.DEFAULT_ANALYSIS_TARGET:
+            if self.target_combobox:
+                current_target_state = self.target_combobox.cget('state')
+                new_target_state = "readonly" if enable_target_selector else "disabled"
+                if show_target_selector:
+                    if not self.target_combobox.winfo_ismapped():
+                        self.target_combobox.pack(side="left", padx=(0, 15), pady=15, ipady=2)
+                        self.target_combobox.pack_configure(before=self.analyze_button)
+                    if current_target_state != new_target_state:
+                        self.target_combobox.config(state=new_target_state)
+                    if list(self.target_combobox['values']) != target_list:
+                         self.target_combobox.config(values=target_list)
+                    if new_target_state == "disabled":
+                        if self.selected_target.get() != config.DEFAULT_ANALYSIS_TARGET:
+                             self.selected_target.set(config.DEFAULT_ANALYSIS_TARGET)
+                    elif self.selected_target.get() not in target_list: 
+                        self.selected_target.set(config.DEFAULT_ANALYSIS_TARGET) 
+                else:
+                     if self.target_combobox.winfo_ismapped():
+                         self.target_combobox.pack_forget()
+                     if self.selected_target.get() != config.DEFAULT_ANALYSIS_TARGET: 
                          self.selected_target.set(config.DEFAULT_ANALYSIS_TARGET)
-                elif self.selected_target.get() not in target_list:
-                    self.selected_target.set(config.DEFAULT_ANALYSIS_TARGET)
-            else:
-                 if self.target_combobox.winfo_ismapped():
-                     self.target_combobox.pack_forget()
-                 if self.selected_target.get() != config.DEFAULT_ANALYSIS_TARGET:
-                     self.selected_target.set(config.DEFAULT_ANALYSIS_TARGET)
+
+            # --- Button States ---
+            disease_is_selected = disease != "Select Disease"
+            country_is_selected = country != "Select Country"
+
+            # Analyze button logic (for single selected country)
+            can_analyze_now = False
+            if disease_is_selected:
+                if disease in ["COVID-19", "Grippe", "Zika"]:
+                    raw_data_loaded_for_disease = (disease == "COVID-19" and raw_covid_loaded) or \
+                                                  (disease == "Grippe" and raw_grippe_loaded) or \
+                                                  (disease == "Zika" and raw_zika_loaded)
+                    can_analyze_now = raw_data_loaded_for_disease and country_is_selected
+                elif disease in config.AVAILABLE_DISEASES: # Simulated/Other
+                     # Processed data (`self.disease_data`) is loaded during the auto-load via on_disease_change
+                     can_analyze_now = self.disease_data is not None and not self.disease_data.empty
+
+            analyze_state = "normal" if can_analyze_now else "disabled"
+
+            # Export All button logic - Enabled if *any* raw data is loaded
+            export_all_state = "normal" if any_raw_data_loaded else "disabled"
+
+            # Prediction button/slider logic (depends on single analysis completion)
+            data_processed_for_target = (self.disease_data is not None and not self.disease_data.empty and self.current_target_col_name is not None)
+            predict_state_tk = "normal" if data_processed_for_target else "disabled"
+
+            # Apply states to Buttons only if state has changed
+            if self.analyze_button and self.analyze_button.cget('state') != analyze_state:
+                 self.analyze_button.config(state=analyze_state)
+            if self.export_all_button and self.export_all_button.cget('state') != export_all_state:
+                 self.export_all_button.config(state=export_all_state)
+
+            # Apply states to Prediction View components
+            if "prediction" in self.view_frames:
+                 pred_view = self.view_frames["prediction"]
+                 pred_button = pred_view.get_predict_button()
+                 pred_slider = pred_view.get_slider()
+                 if pred_button and pred_button.cget('state') != predict_state_tk: # GlowButton state is 'normal' or 'disabled'
+                     pred_button.config(state=predict_state_tk)
+                 if pred_slider and pred_slider.cget('state') != predict_state_tk:
+                     pred_slider.config(state=predict_state_tk)
+
+        except Exception as e:
+            print(f"CRITICAL ERROR in _update_ui_element_states: {e}")
+            import traceback # Ensure traceback is available in this scope if not already
+            traceback.print_exc()
+            if self.status_bar:
+                self.status_bar.set_status(f"UI Update Error. Check console.")
+            
+            # Attempt to disable most interactive controls to indicate an error state
+            controls_to_disable_on_error = [
+                self.country_combobox, self.target_combobox,
+                self.analyze_button, self.export_all_button, self.load_button 
+            ]
+            if "prediction" in self.view_frames:
+                pred_view = self.view_frames["prediction"]
+                if hasattr(pred_view, 'get_predict_button') and pred_view.get_predict_button():
+                    controls_to_disable_on_error.append(pred_view.get_predict_button())
+                if hasattr(pred_view, 'get_slider') and pred_view.get_slider():
+                    controls_to_disable_on_error.append(pred_view.get_slider())
+
+            for control in controls_to_disable_on_error:
+                if control:
+                    try:
+                        control.config(state='disabled')
+                    except tk.TclError: # Control might be destroyed or in bad state
+                        pass
+            # Ensure disease combobox is usable to allow user to try selecting another option
+            if self.disease_combobox:
+                try:
+                    self.disease_combobox.config(state='readonly')
+                except tk.TclError:
+                    pass
+        finally:
+            # These color updates have their own internal error handling (tk.TclError)
+            self._update_combobox_color(widget=self.disease_combobox)
+            self._update_combobox_color(widget=self.country_combobox)
             self._update_combobox_color(widget=self.target_combobox)
-
-
-        # --- Button States ---
-        disease_is_selected = disease != "Select Disease"
-        country_is_selected = country != "Select Country"
-
-        # *** Load button state is handled by on_disease_change - no logic needed here ***
-
-        # Analyze button logic (for single selected country)
-        can_analyze_now = False
-        if disease_is_selected:
-            if disease in ["COVID-19", "Grippe"]:
-                raw_data_loaded_for_disease = (disease == "COVID-19" and raw_covid_loaded) or \
-                                              (disease == "Grippe" and raw_grippe_loaded)
-                can_analyze_now = raw_data_loaded_for_disease and country_is_selected
-            elif disease in config.AVAILABLE_DISEASES: # Simulated/Other
-                 # Processed data (`self.disease_data`) is loaded during the auto-load via on_disease_change
-                 can_analyze_now = self.disease_data is not None and not self.disease_data.empty
-
-        analyze_state = "normal" if can_analyze_now else "disabled"
-
-        # Export All button logic - Enabled if *any* raw data is loaded
-        export_all_state = "normal" if any_raw_data_loaded else "disabled"
-
-        # Prediction button/slider logic (depends on single analysis completion)
-        data_processed_for_target = (self.disease_data is not None and not self.disease_data.empty and self.current_target_col_name is not None)
-        predict_state_tk = "normal" if data_processed_for_target else "disabled"
-        predict_state_glow = "normal" if data_processed_for_target else "disabled"
-
-        # Apply states to Buttons only if state has changed
-        # *** No update for load_button here ***
-        if self.analyze_button and self.analyze_button.cget('state') != analyze_state:
-             self.analyze_button.config(state=analyze_state)
-        if self.export_all_button and self.export_all_button.cget('state') != export_all_state:
-             self.export_all_button.config(state=export_all_state)
-
-        # Apply states to Prediction View components
-        if "prediction" in self.view_frames:
-             pred_view = self.view_frames["prediction"]
-             pred_button = pred_view.get_predict_button()
-             pred_slider = pred_view.get_slider()
-             if pred_button and pred_button.cget('state') != predict_state_glow:
-                 pred_button.config(state=predict_state_glow)
-             if pred_slider and pred_slider.cget('state') != predict_state_tk:
-                 pred_slider.config(state=predict_state_tk)
 
 
     def clear_statistics(self):
@@ -763,6 +814,7 @@ class DarkThemedDiseaseApp:
         already_loaded = False
         if disease == "COVID-19" and self.raw_covid_data is not None: already_loaded=True
         elif disease == "Grippe" and self.raw_influenza_data is not None: already_loaded=True
+        elif disease == "Zika" and self.raw_zika_data is not None: already_loaded=True
 
         if already_loaded:
              status_msg=f"{disease} data already loaded. Select Country/Target and Analyze or Export."
@@ -786,6 +838,9 @@ class DarkThemedDiseaseApp:
         elif disease == "Grippe":
             self.raw_influenza_data = None
             self.allowed_influenza_countries_in_data = []
+        elif disease == "Zika":
+            self.raw_zika_data = None
+            self.allowed_zika_countries_in_data = []
         self.selected_country.set("Select Country")
         self.selected_target.set(config.DEFAULT_ANALYSIS_TARGET)
 
@@ -840,6 +895,16 @@ class DarkThemedDiseaseApp:
                  print(f"[Influenza Load Thread] Countries Found: {self.allowed_influenza_countries_in_data}");
                  success = True
 
+            elif disease == "Zika":
+                 if raw_data_temp.empty: raise ValueError("Loaded Zika data is empty.")
+                 self.raw_zika_data = raw_data_temp;
+                 country_col = config.ZIKA_COUNTRY_COL
+                 if country_col not in self.raw_zika_data.columns: raise ValueError(f"Raw country column '{country_col}' missing.");
+                 self.allowed_zika_countries_in_data = sorted(self.raw_zika_data[country_col].dropna().astype(str).unique())
+                 if not self.allowed_zika_countries_in_data: print("[Warning] No countries found in Zika data.")
+                 print(f"[Zika Load Thread] Countries Found: {self.allowed_zika_countries_in_data}");
+                 success = True
+
             else: # Simulated/Other - process immediately for 'Cases'
                  is_simulation = True
                  if raw_data_temp.empty: raise ValueError(f"Loaded/Simulated data for {disease} is empty.");
@@ -860,6 +925,7 @@ class DarkThemedDiseaseApp:
             print(f"--- [Thread] {error_message} ---"); traceback.print_exc();
             if disease == "COVID-19": self.raw_covid_data = None; self.allowed_covid_countries_in_data = []
             elif disease == "Grippe": self.raw_influenza_data = None; self.allowed_influenza_countries_in_data = []
+            elif disease == "Zika": self.raw_zika_data = None; self.allowed_zika_countries_in_data = []
             self.disease_data = None; self.current_target_col_name = None
             success = False
         finally:
@@ -869,48 +935,67 @@ class DarkThemedDiseaseApp:
 
     def _data_load_complete(self, success, is_simulation, error_message=None):
         """Handles UI updates after the data loading thread finishes."""
-        self._set_ui_busy(False) # Re-enable UI first
+        self._set_ui_busy(False) # Re-enable UI first. This also calls _update_ui_element_states().
         disease = self.current_disease.get()
+
+        # Check if _update_ui_element_states (called via _set_ui_busy) already reported an error
+        ui_error_detected = False
+        if self.status_bar:
+            current_status = self.status_bar.status_var.get()
+            if "UI Update Error" in current_status:
+                ui_error_detected = True
+                print(f"[DataLoadComplete] Detected UI update error from earlier step. Status: '{current_status}'")
 
         if success:
             if self.status_bar: self.status_bar.set_progress(100)
 
-            if not is_simulation:
-                # Raw data loaded (COVID/Grippe), update UI states and prompt for next step
-                self._update_ui_element_states() # Enables country/target/export/analyze selectors
-                status_msg = f"{disease} data loaded. "
-                countries_available = (disease == "COVID-19" and self.allowed_covid_countries_in_data) or \
-                                      (disease == "Grippe" and self.allowed_influenza_countries_in_data)
-                if countries_available:
-                     status_msg += "Select Country"
-                     if disease == "COVID-19": # Only COVID supports target selection
-                          status_msg += f" & Target ({self.selected_target.get()})"
-                     status_msg += ", then Analyze. Or 'Export Cleaned'."
-                else:
-                     status_msg += "No valid countries found/allowed!"
-                if self.status_bar: self.status_bar.set_status(status_msg)
-                if "dashboard" in self.view_frames: self.view_frames["dashboard"].update_status(status_msg)
+            if not ui_error_detected: # Only proceed with normal status updates if no UI error was previously set
+                if not is_simulation:
+                    # Raw data loaded (COVID/Grippe/Zika), UI states should be updated by _set_ui_busy.
+                    # Now, set the appropriate status message.
+                    status_msg = f"{disease} data loaded. "
+                    countries_available = (disease == "COVID-19" and self.allowed_covid_countries_in_data) or \
+                                          (disease == "Grippe" and self.allowed_influenza_countries_in_data) or \
+                                          (disease == "Zika" and self.allowed_zika_countries_in_data)
+                    if countries_available:
+                         status_msg += "Select Country"
+                         if disease == "COVID-19": # Only COVID supports target selection
+                              status_msg += f" & Target ({self.selected_target.get()})"
+                         status_msg += ", then Analyze. Or 'Export Cleaned'."
+                    else:
+                         status_msg += "No valid countries found/allowed!"
+                    if self.status_bar:
+                        self.status_bar.set_status(status_msg)
+                        self.root.update_idletasks() # Force UI update for status bar
+                    if "dashboard" in self.view_frames:
+                        self.view_frames["dashboard"].update_status(status_msg)
 
-            else: # Simulation loaded AND processed (always 'Cases')
-                source_type="Simulated"
-                status_msg = f"Data ready: {disease} ({source_type}, Target: Cases). Analyzing..."
-                if self.status_bar: self.status_bar.set_status(status_msg)
-                if "dashboard" in self.view_frames: self.view_frames["dashboard"].update_status(status_msg)
-                # Update UI states (Analyze button should be enabled now)
-                self._update_ui_element_states()
-                # Run analysis automatically for the processed 'Cases' data
-                # Use root.after to ensure UI state update is processed first
-                self.root.after(10, self.analyze_data, self.current_target_col_name)
+                else: # Simulation loaded AND processed (always 'Cases')
+                    source_type="Simulated"
+                    status_msg = f"Data ready: {disease} ({source_type}, Target: Cases). Analyzing..."
+                    if self.status_bar:
+                        self.status_bar.set_status(status_msg)
+                        self.root.update_idletasks() # Force UI update for status bar
+                    if "dashboard" in self.view_frames:
+                        self.view_frames["dashboard"].update_status(status_msg)
+                    # UI states should be updated by _set_ui_busy.
+                    # Run analysis automatically for the processed 'Cases' data
+                    self.root.after(10, self.analyze_data, self.current_target_col_name)
+            # If ui_error_detected, the error message from _update_ui_element_states remains.
 
         else: # Loading Failed
             error_msg_full = error_message or f"Unknown loading error for {disease}."
-            if self.status_bar: self.status_bar.set_progress(0); self.status_bar.set_status(error_msg_full)
-            if "dashboard" in self.view_frames: self.view_frames["dashboard"].update_status(f"Error: {error_msg_full}")
+            if self.status_bar:
+                self.status_bar.set_progress(0)
+                self.status_bar.set_status(error_msg_full)
+                self.root.update_idletasks() # Force UI update for status bar
+            if "dashboard" in self.view_frames:
+                self.view_frames["dashboard"].update_status(f"Error: {error_msg_full}")
             self.clear_all_view_content()
             self.clear_statistics()
-            self._update_ui_element_states() # Reset UI controls to initial/disabled state
+            # _update_ui_element_states() was already called by _set_ui_busy(False) to reflect the reset data state.
 
-        # Final check on combobox colors after state changes
+        # Final check on combobox colors after state changes (these have their own error handling)
         self._update_combobox_color(widget=self.disease_combobox)
         self._update_combobox_color(widget=self.country_combobox)
         self._update_combobox_color(widget=self.target_combobox)
@@ -934,7 +1019,7 @@ class DarkThemedDiseaseApp:
         if disease == "Select Disease":
              if self.status_bar: self.status_bar.set_status("Please select a disease first.")
              return
-        if disease in ["COVID-19", "Grippe"] and selected_country == "Select Country":
+        if disease in ["COVID-19", "Grippe", "Zika"] and selected_country == "Select Country":
              if self.status_bar: self.status_bar.set_status(f"Please select a country for {disease} first.")
              return
         if disease == "COVID-19" and selected_target_type not in config.ANALYSIS_TARGETS:
@@ -955,6 +1040,7 @@ class DarkThemedDiseaseApp:
         raw_data = None
         if disease == "COVID-19": raw_data = self.raw_covid_data
         elif disease == "Grippe": raw_data = self.raw_influenza_data
+        elif disease == "Zika": raw_data = self.raw_zika_data
         elif disease in config.AVAILABLE_DISEASES: # Simulated data
              if self.disease_data is not None and not self.disease_data.empty:
                  print(f"[Analyze Trigger] Analyzing already processed SIMULATED data for {disease}")
@@ -979,7 +1065,9 @@ class DarkThemedDiseaseApp:
         self.disease_data = None # Clear previous *single* processed data
         self.current_target_col_name = None # Reset current target name
 
-        target_thread_func = self._processing_covid_thread_target if disease == "COVID-19" else self._processing_influenza_thread_target
+        target_thread_func = self._processing_covid_thread_target if disease == "COVID-19" else \
+                             self._processing_influenza_thread_target if disease == "Grippe" else \
+                             self._processing_zika_thread_target
         thread = threading.Thread(target=target_thread_func, args=(selected_country, selected_target_type), daemon=True)
         thread.start()
 
@@ -1042,6 +1130,38 @@ class DarkThemedDiseaseApp:
 
         except Exception as e:
             error_message = f"SINGLE Influenza Proc Error ({selected_country}): {str(e)}"
+            print(f"--- [Thread] {error_message} ---"); traceback.print_exc()
+            self.disease_data = None
+            self.current_target_col_name = None
+            self.root.after(0, self._processing_complete, False, None, error_message) # Failure
+
+
+    def _processing_zika_thread_target(self, selected_country, target_type):
+        """Processes SINGLE Zika country/target in a thread (for Analyze button)."""
+        processed_df_country = None
+        target_col_name_out = None
+        try:
+            print(f"--- [Thread] Starting SINGLE Zika Processing for {selected_country} ({target_type}) ---")
+            processed_df_country = processing.preprocess_zika_data(self.raw_zika_data, selected_country, target_type)
+            if processed_df_country is None or processed_df_country.empty:
+                raise ValueError(f"Zika Preprocessing returned empty/None for {selected_country} ({target_type}).")
+
+            target_col_name_out = config.PREDICTION_CASES_TARGET_COL if target_type == "Cases" else config.PREDICTION_DEATHS_TARGET_COL
+            if target_col_name_out not in processed_df_country.columns:
+                 raise ValueError(f"Expected target column '{target_col_name_out}' not found after preprocess_zika_data.")
+
+            final_processed_df = processing.common_post_processing(processed_df_country, target_col_name_out)
+            if final_processed_df is None or final_processed_df.empty:
+                raise ValueError(f"Common post-processing failed for Zika/{selected_country} ({target_type}).")
+
+            self.disease_data = final_processed_df # Assign to main attribute for single analysis
+            self.current_target_col_name = target_col_name_out # Store the processed target name
+
+            print(f"--- [Thread] SINGLE Zika Processing Complete for {selected_country} ({target_type}). Shape: {self.disease_data.shape} ---")
+            self.root.after(0, self._processing_complete, True, target_col_name_out, None) # Success
+
+        except Exception as e:
+            error_message = f"SINGLE Zika Proc Error ({selected_country}/{target_type}): {str(e)}"
             print(f"--- [Thread] {error_message} ---"); traceback.print_exc()
             self.disease_data = None
             self.current_target_col_name = None
@@ -1117,6 +1237,7 @@ class DarkThemedDiseaseApp:
 
             if disease == "COVID-19": source_info = f" ({country})" if country != "Select Country" else ""
             elif disease == "Grippe": source_info = f" ({country} - Weekly Source)" if country != "Select Country" else ""
+            elif disease == "Zika": source_info = f" ({country})" if country != "Select Country" else ""
             elif disease in config.AVAILABLE_DISEASES: source_info = " (Simulated)"
 
             fig = analysis.plot_analysis_charts(self.disease_data, disease, target_col_name, source_info)
@@ -1127,15 +1248,14 @@ class DarkThemedDiseaseApp:
                  if fig is None: raise ValueError(f"Analysis plot generation returned None for {target_type_label}.")
 
             target_frame = self.view_frames["analysis"].get_plot_frame()
-            self._embed_figure(fig, target_frame)
-
-            self._update_analysis_statistics_display(target_col_name)
-
-            status_msg = f"{target_type_label} analysis complete. View plot in Analysis tab. Ready to predict."
-            if self.status_bar: self.status_bar.set_status(status_msg)
-            if "dashboard" in self.view_frames: self.view_frames["dashboard"].update_status(status_msg)
-
+            # Préparation de la vue d'analyse avant changement pour éviter les problèmes d'affichage
+            self.root.update_idletasks()  # Force la mise à jour de l'interface avant changement
+            
+            # Changement vers la vue d'analyse en premier
             self.show_view("analysis")
+            
+            # Petite pause pour laisser le temps à l'interface de s'adapter
+            self.root.after(100, lambda: self._continue_analysis_display(fig, target_frame, target_col_name, target_type_label))
 
         except AttributeError as ae:
             if "'_embed_figure'" in str(ae):
@@ -1168,6 +1288,32 @@ class DarkThemedDiseaseApp:
         finally:
              self._update_ui_element_states()
 
+    def _continue_analysis_display(self, fig, target_frame, target_col_name, target_type_label):
+        """Continue l'affichage de l'analyse après le changement de vue pour éviter les problèmes d'interface."""
+        try:
+            # Intégration du graphique après changement de vue
+            self._embed_figure(fig, target_frame)
+            
+            # Mise à jour des statistiques
+            self._update_analysis_statistics_display(target_col_name)
+            
+            # Mise à jour des messages de statut
+            status_msg = f"{target_type_label} analysis complete. View plot in Analysis tab. Ready to predict."
+            if self.status_bar: self.status_bar.set_status(status_msg)
+            if "dashboard" in self.view_frames: self.view_frames["dashboard"].update_status(status_msg)
+            
+            # Forcer une mise à jour complète de l'interface pour s'assurer que tout s'affiche correctement
+            self.root.update_idletasks()
+            
+        except Exception as e:
+            error_message = f"Analysis Display Error (delayed): {str(e)}"
+            print(error_message)
+            traceback.print_exc()
+            if self.status_bar: self.status_bar.set_status(error_message)
+            try:
+                self._display_error_in_frame(target_frame, f"Plotting Error ({target_type_label}):\n{e}")
+            except Exception as e_disp: 
+                print(f"Error displaying error in frame: {e_disp}")
 
     def _update_analysis_statistics_display(self, target_col_name):
         """Updates dashboard stats based on the calculated stats for the target (SINGLE country)."""
@@ -1273,22 +1419,20 @@ class DarkThemedDiseaseApp:
 
             if prediction_df is None or prediction_df.empty:
                 raise ValueError(f"{target_type_label} prediction generation failed or returned empty.")
-
-            status_update_plot = f"Generating {target_type_label} prediction plot..."
-            self.root.after(0, lambda: self.status_bar.set_status(status_update_plot) if self.status_bar else None)
-
-            source_info = ""
-            if disease == "COVID-19": source_info = f" ({country})" if country != "Select Country" else ""
-            elif disease == "Grippe": source_info = f" ({country} - Weekly Source)" if country != "Select Country" else ""
-            elif disease in config.AVAILABLE_DISEASES: source_info = " (Simulated)"
-
+                
+            # Generate the prediction plot (this call was missing)
+            source_info = f" ({country})" if country and country != "Select Country" else ""
             fig_pred = prediction.plot_prediction_chart(
-                self.disease_data, prediction_df, disease, target_col_name, source_info, num_days_to_predict
+                hist_df=self.disease_data, 
+                pred_df=prediction_df, 
+                disease_name=disease, 
+                target_col_name=target_col_name,
+                source_info=source_info,
+                forecast_days=num_days_to_predict
             )
-            if fig_pred is None:
-                 try: fig_pred = prediction.plot_prediction_chart(self.disease_data, pd.DataFrame(), disease, target_col_name, source_info)
-                 except: pass
-                 if fig_pred is None: raise ValueError(f"{target_type_label} prediction plot generation returned None.")
+            
+            if fig_pred is None: 
+                raise ValueError(f"{target_type_label} prediction plot generation returned None.")
 
             pred_stats = prediction.calculate_prediction_stats(prediction_df, target_col_name)
 
@@ -1315,11 +1459,16 @@ class DarkThemedDiseaseApp:
         if success and fig:
             status_msg = f"{target_type_label} prediction complete. View forecast in Prediction tab."
             target_frame = pred_view.get_plot_frame()
-            self._embed_figure(fig, target_frame)
-            self._display_prediction_statistics(stats_dict, target_col_name)
-
-            if self.status_bar: self.status_bar.set_progress(100); self.status_bar.set_status(status_msg)
-            if "dashboard" in self.view_frames: self.view_frames["dashboard"].update_status(status_msg)
+            
+            # Préparation de la vue de prédiction avant changement pour éviter les problèmes d'affichage
+            self.root.update_idletasks()  # Force la mise à jour de l'interface avant changement
+            
+            # Changement vers la vue de prédiction en premier
+            self.show_view("prediction")
+            
+            # Petite pause pour laisser le temps à l'interface de s'adapter
+            self.root.after(100, lambda: self._continue_prediction_display(fig, target_frame, stats_dict, target_col_name, status_msg))
+            
         else:
             status_msg = error_message or f"Unknown prediction error for {self.current_disease.get()} ({target_type_label})."
             if self.status_bar: self.status_bar.set_progress(0); self.status_bar.set_status(status_msg)
@@ -1327,18 +1476,47 @@ class DarkThemedDiseaseApp:
 
             target_frame = pred_view.get_plot_frame()
             self._display_error_in_frame(target_frame, f"Prediction Error ({target_type_label}):\n{status_msg}")
+            
+            self._update_ui_element_states()
+            self._update_combobox_color(widget=self.disease_combobox)
+            self._update_combobox_color(widget=self.country_combobox)
+            self._update_combobox_color(widget=self.target_combobox)
 
-        self._update_ui_element_states()
-        self._update_combobox_color(widget=self.disease_combobox)
-        self._update_combobox_color(widget=self.country_combobox)
-        self._update_combobox_color(widget=self.target_combobox)
+            if self.status_bar:
+                self.root.after(1000, lambda: self.status_bar.set_progress(0) if self.status_bar else None)
 
-        if self.status_bar:
-            self.root.after(1000, lambda: self.status_bar.set_progress(0) if self.status_bar else None)
-
-        self.show_view("prediction")
+            self.show_view("prediction")
 
 
+    def _continue_prediction_display(self, fig, target_frame, stats_dict, target_col_name, status_msg):
+        """Continue l'affichage de la prédiction après le changement de vue pour éviter les problèmes d'interface."""
+        try:
+            # Intégration du graphique après changement de vue
+            self._embed_figure(fig, target_frame)
+            
+            # Mise à jour des statistiques
+            self._display_prediction_statistics(stats_dict, target_col_name)
+            
+            # Mise à jour des messages de statut
+            if self.status_bar: self.status_bar.set_progress(100); self.status_bar.set_status(status_msg)
+            if "dashboard" in self.view_frames: self.view_frames["dashboard"].update_status(status_msg)
+            
+            # Mise à jour des états UI
+            self._update_ui_element_states()
+            self._update_combobox_color(widget=self.disease_combobox)
+            self._update_combobox_color(widget=self.country_combobox)
+            self._update_combobox_color(widget=self.target_combobox)
+            
+            # Force la mise à jour de l'interface après affichage
+            self.root.update_idletasks()
+            
+            if self.status_bar:
+                self.root.after(1000, lambda: self.status_bar.set_progress(0) if self.status_bar else None)
+        except Exception as e:
+            print(f"Error in _continue_prediction_display: {e}")
+            traceback.print_exc()
+            if self.status_bar: self.status_bar.set_status(f"Error displaying prediction: {str(e)}")
+    
     def _display_prediction_statistics(self, stats_dict, target_col_name):
         """Appends prediction stats to the status bar message (SINGLE country)."""
         # (Remains the same)
@@ -1410,78 +1588,15 @@ class DarkThemedDiseaseApp:
                              fg=self.colors["danger"], bg=self.colors["bg_card"],
                              wraplength=wrap_len, anchor='center', justify='center')
          error_label.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
-         parent_frame.grid_rowconfigure(0, weight=1); parent_frame.grid_columnconfigure(0, weight=1)
-
-
-    def _display_error_in_stats(self, error_message):
-        """Displays error message in dashboard stats cards and status bar."""
-        # (Remains the same)
-        dashboard_view = self.view_frames.get("dashboard")
-        if dashboard_view:
-            dashboard_view.update_stats({"error": error_message})
-            dashboard_view.update_status(f"Stats Error: {error_message}")
-        if self.status_bar:
-            self.status_bar.set_status(f"Stats Error: {error_message}")
-            self.status_bar.set_risk("Error")
-
-
-    # --- MODIFIED: _set_ui_busy no longer controls load_button state ---
-    def _set_ui_busy(self, busy_flag, task_name="Task"):
-        """Disables/Enables UI controls during long operations."""
-        state_buttons_glow = "disabled" if busy_flag else "normal"
-        state_combobox = "disabled" if busy_flag else "readonly"
-        state_slider_tk = "disabled" if busy_flag else "normal"
-
-        if busy_flag:
-            if self.status_bar: self.status_bar.set_status(f"{task_name} in progress..."); self.status_bar.start_progress()
-        else:
-            if self.status_bar: self.status_bar.stop_progress()
-
-        # Update Header Controls (Excluding Load Button)
-        # if self.load_button and self.load_button.cget('state') != state_buttons_glow: # <-- REMOVED/COMMENTED
-        #      self.load_button.config(state=state_buttons_glow)                       # <-- REMOVED/COMMENTED
-        if self.analyze_button and self.analyze_button.cget('state') != state_buttons_glow:
-             self.analyze_button.config(state=state_buttons_glow)
-        if self.export_all_button and self.export_all_button.cget('state') != state_buttons_glow:
-             self.export_all_button.config(state=state_buttons_glow)
-        if self.disease_combobox and self.disease_combobox.cget('state') != state_combobox:
-             self.disease_combobox.config(state=state_combobox)
-        if busy_flag: # Always disable dependent combos when busy
-            if self.country_combobox and self.country_combobox.cget('state') != 'disabled':
-                 self.country_combobox.config(state="disabled")
-            if self.target_combobox and self.target_combobox.cget('state') != 'disabled':
-                 self.target_combobox.config(state="disabled")
-
-        # Update Prediction View Controls
-        if "prediction" in self.view_frames:
-             pred_view = self.view_frames["prediction"]
-             pred_button = pred_view.get_predict_button()
-             pred_slider = pred_view.get_slider()
-             if pred_button and pred_button.cget('state') != state_buttons_glow:
-                 pred_button.config(state=state_buttons_glow)
-             if pred_slider and pred_slider.cget('state') != state_slider_tk:
-                 pred_slider.config(state=state_slider_tk)
-
-        # Update Combobox Colors
-        self.root.after_idle(self._update_combobox_color, None, self.disease_combobox)
-        self.root.after_idle(self._update_combobox_color, None, self.country_combobox)
-        self.root.after_idle(self._update_combobox_color, None, self.target_combobox)
-
-        # If becoming *not* busy, restore correct dynamic states
-        if not busy_flag:
-            self.root.after(50, self._update_ui_element_states)
-    # --- END of MODIFIED _set_ui_busy ---
-
-
-    # --- EXPORT ALL FUNCTIONALITY (Remains the same as previous 'Export All' version) ---
     def start_export_all_cleaned_data(self):
         """Initiates the process to clean and export data for all countries."""
         raw_covid_available = self.raw_covid_data is not None and self.allowed_covid_countries_in_data
         raw_grippe_available = self.raw_influenza_data is not None and self.allowed_influenza_countries_in_data
+        raw_zika_available = self.raw_zika_data is not None and self.allowed_zika_countries_in_data
 
-        if not raw_covid_available and not raw_grippe_available:
-            if self.status_bar: self.status_bar.set_status("No raw data loaded for COVID-19 or Grippe to export.")
-            try: tk.messagebox.showwarning("No Data", "Please load data for COVID-19 or Grippe first before exporting.")
+        if not raw_covid_available and not raw_grippe_available and not raw_zika_available:
+            if self.status_bar: self.status_bar.set_status("No raw data loaded for COVID-19, Grippe, or Zika to export.")
+            try: tk.messagebox.showwarning("No Data", "Please load data for COVID-19, Grippe, or Zika first before exporting.")
             except: pass
             return
 
@@ -1495,14 +1610,15 @@ class DarkThemedDiseaseApp:
 
     def _export_all_cleaned_data_thread_target(self):
         """
-        Worker thread to process all countries for COVID (Cases/Deaths) and Grippe (Cases).
-        Collects results and schedules saving on the main thread.
+        Worker thread to process all countries for COVID (Cases/Deaths), Grippe (Cases),
+        and Zika (Cases/Deaths). Collects results and schedules saving on the main thread.
         """
-        # (Code for this function remains the same as in the previous 'Export All' version)
         print("--- [Export Thread] Starting Export All Cleaned Data Process ---")
         all_cleaned_covid_cases_dfs = []
         all_cleaned_covid_deaths_dfs = []
         all_cleaned_grippe_dfs = []
+        all_cleaned_zika_cases_dfs = []
+        all_cleaned_zika_deaths_dfs = []
         errors_occurred = False
 
         # --- Process COVID-19 Data ---
@@ -1584,10 +1700,65 @@ class DarkThemedDiseaseApp:
         else:
             print("[Export Thread] No raw Grippe data loaded or no countries found. Skipping Grippe export.")
 
+        # --- Process Zika Data ---
+        if self.raw_zika_data is not None and self.allowed_zika_countries_in_data:
+            total_zika_countries = len(self.allowed_zika_countries_in_data)
+            print(f"[Export Thread] Processing {total_zika_countries} Zika countries...")
+            
+            # Process Cases
+            print("[Export Thread] Processing Zika Cases...")
+            status_update = f"Processing Zika Cases (0/{total_zika_countries})..."
+            self.root.after(0, lambda: self.status_bar.set_status(status_update) if self.status_bar else None)
+            
+            for i, country in enumerate(self.allowed_zika_countries_in_data):
+                try:
+                    if (i + 1) % 5 == 0 or i == total_zika_countries - 1:
+                         status_update = f"Processing Zika Cases ({i+1}/{total_zika_countries}: {country})..."
+                         self.root.after(0, lambda s=status_update: self.status_bar.set_status(s) if self.status_bar else None)
+
+                    print(f"[Export Thread] Zika Cases - Processing: {country}")
+                    df_clean = processing.preprocess_zika_data(self.raw_zika_data, country, target_type="Cases")
+                    if df_clean is not None and not df_clean.empty:
+                        df_clean['country'] = country # Add country column back
+                        all_cleaned_zika_cases_dfs.append(df_clean)
+                    else:
+                         print(f"[Export Thread] Warning: No Zika Cases data after cleaning for {country}.")
+                except Exception as e:
+                    print(f"[Export Thread] ERROR processing Zika Cases for {country}: {e}")
+                    errors_occurred = True
+            print("[Export Thread] Finished processing Zika Cases.")
+            
+            # Process Deaths
+            print("[Export Thread] Processing Zika Deaths...")
+            status_update = f"Processing Zika Deaths (0/{total_zika_countries})..."
+            self.root.after(0, lambda: self.status_bar.set_status(status_update) if self.status_bar else None)
+            
+            for i, country in enumerate(self.allowed_zika_countries_in_data):
+                try:
+                    if (i + 1) % 5 == 0 or i == total_zika_countries - 1:
+                         status_update = f"Processing Zika Deaths ({i+1}/{total_zika_countries}: {country})..."
+                         self.root.after(0, lambda s=status_update: self.status_bar.set_status(s) if self.status_bar else None)
+
+                    print(f"[Export Thread] Zika Deaths - Processing: {country}")
+                    df_clean = processing.preprocess_zika_data(self.raw_zika_data, country, target_type="Deaths")
+                    if df_clean is not None and not df_clean.empty:
+                        df_clean['country'] = country # Add country column back
+                        all_cleaned_zika_deaths_dfs.append(df_clean)
+                    else:
+                         print(f"[Export Thread] Warning: No Zika Deaths data after cleaning for {country}.")
+                except Exception as e:
+                    print(f"[Export Thread] ERROR processing Zika Deaths for {country}: {e}")
+                    errors_occurred = True
+            print("[Export Thread] Finished processing Zika Deaths.")
+        else:
+            print("[Export Thread] No raw Zika data loaded or no countries found. Skipping Zika export.")
+
         # --- Concatenate Results ---
         final_covid_cases_df = None
         final_covid_deaths_df = None
         final_grippe_df = None
+        final_zika_cases_df = None
+        final_zika_deaths_df = None
 
         if all_cleaned_covid_cases_dfs:
             print("[Export Thread] Concatenating COVID Cases data...")
@@ -1601,19 +1772,31 @@ class DarkThemedDiseaseApp:
             print("[Export Thread] Concatenating Grippe data...")
             try: final_grippe_df = pd.concat(all_cleaned_grippe_dfs, ignore_index=True)
             except Exception as concat_err: print(f"ERROR concatenating Grippe cases: {concat_err}"); errors_occurred = True
+        if all_cleaned_zika_cases_dfs:
+            print("[Export Thread] Concatenating Zika Cases data...")
+            try: final_zika_cases_df = pd.concat(all_cleaned_zika_cases_dfs, ignore_index=True)
+            except Exception as concat_err: print(f"ERROR concatenating Zika cases: {concat_err}"); errors_occurred = True
+        if all_cleaned_zika_deaths_dfs:
+            print("[Export Thread] Concatenating Zika Deaths data...")
+            try: final_zika_deaths_df = pd.concat(all_cleaned_zika_deaths_dfs, ignore_index=True)
+            except Exception as concat_err: print(f"ERROR concatenating Zika deaths: {concat_err}"); errors_occurred = True
 
         print("--- [Export Thread] Processing complete. Scheduling save dialogs. ---")
         # Schedule the save dialog function on the main thread
         self.root.after(0, self._prompt_and_save_all_cleaned_data,
-                        final_covid_cases_df, final_covid_deaths_df, final_grippe_df, errors_occurred)
+                        final_covid_cases_df, final_covid_deaths_df, 
+                        final_grippe_df,
+                        final_zika_cases_df, final_zika_deaths_df, 
+                        errors_occurred)
 
 
-    def _prompt_and_save_all_cleaned_data(self, covid_cases_df, covid_deaths_df, grippe_df, errors_during_processing):
+    def _prompt_and_save_all_cleaned_data(self, covid_cases_df, covid_deaths_df, 
+                              grippe_df, zika_cases_df, zika_deaths_df,
+                              errors_during_processing):
         """
         Runs on the main thread. Prompts the user with save dialogs for each
         non-empty combined DataFrame.
         """
-        # (Code for this function remains the same as in the previous 'Export All' version)
         print("[Save All] Preparing save dialogs...")
         files_saved_count = 0
         files_failed_count = 0
@@ -1685,6 +1868,50 @@ class DarkThemedDiseaseApp:
                     except: pass
             else: print("[Save All] Grippe Cases save cancelled by user.")
         else: print("[Save All] No combined Grippe Cases data to save.")
+        
+        # Save Zika Cases
+        if zika_cases_df is not None and not zika_cases_df.empty:
+            print("[Save All] Prompting for Zika Cases file...")
+            filepath = filedialog.asksaveasfilename(
+                title="Save ALL Cleaned Zika Cases Data As...",
+                initialfile="cleaned_zika_all_countries_cases.csv",
+                defaultextension=".csv",
+                filetypes=filetypes
+            )
+            if filepath:
+                try:
+                    zika_cases_df.to_csv(filepath, index=False, encoding='utf-8')
+                    print(f"[Save All] Successfully saved Zika Cases to: {filepath}")
+                    files_saved_count += 1
+                except Exception as save_err:
+                    print(f"[Save All] FAILED to save Zika Cases to {filepath}: {save_err}")
+                    files_failed_count += 1
+                    try: tk.messagebox.showerror("Save Error", f"Failed to save Zika Cases file:\n{save_err}")
+                    except: pass
+            else: print("[Save All] Zika Cases save cancelled by user.")
+        else: print("[Save All] No combined Zika Cases data to save.")
+        
+        # Save Zika Deaths
+        if zika_deaths_df is not None and not zika_deaths_df.empty:
+            print("[Save All] Prompting for Zika Deaths file...")
+            filepath = filedialog.asksaveasfilename(
+                title="Save ALL Cleaned Zika Deaths Data As...",
+                initialfile="cleaned_zika_all_countries_deaths.csv",
+                defaultextension=".csv",
+                filetypes=filetypes
+            )
+            if filepath:
+                try:
+                    zika_deaths_df.to_csv(filepath, index=False, encoding='utf-8')
+                    print(f"[Save All] Successfully saved Zika Deaths to: {filepath}")
+                    files_saved_count += 1
+                except Exception as save_err:
+                    print(f"[Save All] FAILED to save Zika Deaths to {filepath}: {save_err}")
+                    files_failed_count += 1
+                    try: tk.messagebox.showerror("Save Error", f"Failed to save Zika Deaths file:\n{save_err}")
+                    except: pass
+            else: print("[Save All] Zika Deaths save cancelled by user.")
+        else: print("[Save All] No combined Zika Deaths data to save.")
 
         # Final UI Updates
         final_status = "Export complete."
@@ -1698,7 +1925,7 @@ class DarkThemedDiseaseApp:
              final_status += " (Processing errors occurred - check console)."
              try: tk.messagebox.showwarning("Export Issues", "Errors occurred during data processing. Check console for details.")
              except: pass
-        elif files_saved_count == 0 and (covid_cases_df is not None or covid_deaths_df is not None or grippe_df is not None):
+        elif files_saved_count == 0 and (covid_cases_df is not None or covid_deaths_df is not None or grippe_df is not None or zika_cases_df is not None or zika_deaths_df is not None):
              final_status = "Export finished. No files were saved (cancelled by user?)."
 
         print(f"[Save All] {final_status}")
@@ -1802,6 +2029,69 @@ class DarkThemedDiseaseApp:
             dashboard_view.update_stats(dashboard_stats)
             if self.status_bar:
                 self.status_bar.set_risk("Medium")  # Default risk level
+
+    def _set_ui_busy(self, is_busy, message=None):
+        """Controls UI elements to indicate busy/loading state.
+        
+        Args:
+            is_busy (bool): True to enable busy state, False to restore normal state
+            message (str, optional): Status message to display while busy
+        """
+        try:
+            if is_busy:
+                # 1. Show status message
+                if message:
+                    if self.status_bar: self.status_bar.set_status(message + "...")
+                    if "dashboard" in self.view_frames: self.view_frames["dashboard"].update_status(message + "...")
+                
+                # 2. Start progress bar animation
+                if self.status_bar: self.status_bar.start_progress()
+                
+                # 3. Disable most interactive controls during busy operations
+                controls_to_disable = [
+                    self.analyze_button,
+                    self.export_all_button,
+                    self.country_combobox,
+                    self.target_combobox
+                ]
+                
+                # Disable prediction controls if they exist
+                if "prediction" in self.view_frames:
+                    pred_view = self.view_frames["prediction"]
+                    if hasattr(pred_view, 'get_predict_button') and pred_view.get_predict_button():
+                        controls_to_disable.append(pred_view.get_predict_button())
+                    if hasattr(pred_view, 'get_slider') and pred_view.get_slider():
+                        controls_to_disable.append(pred_view.get_slider())
+                
+                for control in controls_to_disable:
+                    if control:
+                        try:
+                            if hasattr(control, 'config'):  # Most widgets
+                                control.config(state='disabled')
+                        except tk.TclError:
+                            pass  # Control might be destroyed or in bad state
+            else:
+                # 1. Stop progress bar animation
+                if self.status_bar: self.status_bar.stop_progress()
+                
+                # 2. Update UI element states based on current data state
+                self._update_ui_element_states()
+                
+                # 3. Update status message if none was provided
+                if not message and self.status_bar:
+                    self.status_bar.set_status("Ready")
+        except Exception as e:
+            print(f"ERROR in _set_ui_busy({is_busy}, {message}): {e}")
+            traceback.print_exc()
+            # Try to at least stop progress and reset UI to prevent permanent lockup
+            if self.status_bar: 
+                self.status_bar.stop_progress()
+                self.status_bar.set_status("ERROR: UI state issue. Please retry.")
+            if hasattr(self, '_update_ui_element_states'):
+                try:
+                    self._update_ui_element_states()
+                except Exception:
+                    pass  # Avoid cascading errors
 
 
 # --- Main Execution ---

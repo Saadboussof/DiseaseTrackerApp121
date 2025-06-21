@@ -236,6 +236,115 @@ def preprocess_influenza_data(df_raw, country_to_process):
     return df_std
 
 
+def preprocess_zika_data(df_raw, country_to_process, target_type="Cases"):
+    """
+    Filters raw Zika data for a specific country, processes the data 
+    based on target type (Cases or Deaths), and prepares it for analysis.
+    Handles both basic and enhanced Zika datasets.
+    
+    Args:
+        df_raw: Raw Zika DataFrame with country, date, cases, deaths columns
+                and potentially enhanced columns similar to COVID-19
+        country_to_process: Country to filter for
+        target_type: "Cases" or "Deaths"
+        
+    Returns:
+        DataFrame with 'date' and target columns (either 'cases' or 'deaths')
+    """
+    print(f"\n[Zika Preprocessing] Starting for country: '{country_to_process}', Target: '{target_type}'")
+    if df_raw is None or df_raw.empty:
+        raise ValueError("Input Raw Zika DataFrame is None/empty.")
+        
+    # Check if we have enhanced data
+    enhanced_data = False
+    if hasattr(config, 'ZIKA_RELEVANT_COLUMNS'):
+        enhanced_cols = ['total_cases', 'total_deaths', 'hosp_patients', 'stringency_index']
+        if all(col in df_raw.columns for col in enhanced_cols):
+            enhanced_data = True
+            print("[Zika Proc] Enhanced dataset detected with additional columns")
+
+    # Determine source and target column names based on target_type
+    if target_type == "Cases":
+        source_target_col = config.ZIKA_CASES_COL
+        final_target_col_name = config.PREDICTION_CASES_TARGET_COL  # 'cases'
+    elif target_type == "Deaths":
+        source_target_col = config.ZIKA_DEATHS_COL
+        final_target_col_name = config.PREDICTION_DEATHS_TARGET_COL  # 'deaths'
+    else:
+        raise ValueError(f"Invalid target_type specified: '{target_type}'. Must be 'Cases' or 'Deaths'.")
+
+    print(f"[Zika Proc] Source target column: '{source_target_col}', Final internal name: '{final_target_col_name}'")
+
+    # Filter for the country
+    try:
+        # Ensure the country column is string type before filtering
+        df_raw[config.ZIKA_COUNTRY_COL] = df_raw[config.ZIKA_COUNTRY_COL].astype(str)
+        country_df = df_raw[df_raw[config.ZIKA_COUNTRY_COL].str.strip() == country_to_process.strip()].copy()
+    except Exception as filter_err:
+        print(f"[Zika Proc] Error filtering country '{country_to_process}': {filter_err}")
+        raise ValueError(f"Could not filter Zika data for country '{country_to_process}'.")
+
+    if country_df.empty:
+        available_countries = df_raw[config.ZIKA_COUNTRY_COL].unique()
+        print(f"Available Zika countries: {list(available_countries)}")
+        raise ValueError(f"No Zika data rows found for the selected country: '{country_to_process}'.")
+    
+    print(f"[Zika Proc] Filtered for '{country_to_process}'. Initial shape: {country_df.shape}")
+
+    # Select only the date and target columns
+    required_cols = [config.ZIKA_DATE_COL, source_target_col]
+    if not all(col in country_df.columns for col in required_cols):
+        missing_cols = [col for col in required_cols if col not in country_df.columns]
+        raise ValueError(f"Required columns {missing_cols} not found in Zika data")
+    
+    df_std = country_df[required_cols].copy()
+    
+    # Rename to standard names 'date' and target_col
+    df_std = df_std.rename(columns={
+        config.ZIKA_DATE_COL: 'date',
+        source_target_col: final_target_col_name
+    })
+    
+    print(f"[Zika Proc] Selected and renamed columns ('date', '{final_target_col_name}'). Shape: {df_std.shape}")
+
+    # Convert 'date' to datetime, handle errors
+    try:
+        df_std['date'] = pd.to_datetime(df_std['date'], errors='coerce')
+        initial_rows = len(df_std)
+        df_std.dropna(subset=['date'], inplace=True)
+        if len(df_std) < initial_rows:
+            print(f"[Zika Proc] Warning: Dropped {initial_rows - len(df_std)} rows due to invalid dates.")
+        if df_std.empty:
+            raise ValueError("DataFrame empty after handling date conversions.")
+        print("[Zika Proc] Converted 'date' column to datetime.")
+    except Exception as e:
+        print(f"[Zika Proc] Error converting date column: {e}")
+        traceback.print_exc()
+        raise ValueError("Date conversion failed.") from e
+
+    # Convert target column to numeric, fill NaNs with 0
+    try:
+        df_std[final_target_col_name] = pd.to_numeric(df_std[final_target_col_name], errors='coerce').fillna(0).astype(int)
+        print(f"[Zika Proc] Converted '{final_target_col_name}' to numeric (int), filled NaNs with 0.")
+    except Exception as e:
+        print(f"[Zika Proc] Error converting {final_target_col_name} column: {e}")
+        traceback.print_exc()
+        raise ValueError(f"{final_target_col_name} conversion failed.") from e
+
+    # Sort by date and remove duplicates (keeping the last entry for a given date)
+    df_std = df_std.sort_values('date').drop_duplicates(subset=['date'], keep='last')
+    df_std = df_std.reset_index(drop=True)
+    print("[Zika Proc] Sorted by date and removed potential duplicates.")
+
+    if df_std.empty:
+        print(f"[Zika Proc] Warning: DataFrame is empty after processing for '{country_to_process}'.")
+    else:
+        print(f"[Zika Proc] Preprocessing complete for '{country_to_process}' ({target_type}). Shape: {df_std.shape}")
+
+    # Returns DataFrame with columns 'date' and either 'cases' or 'deaths'
+    return df_std
+
+
 def common_post_processing(df_preprocessed, target_col_name):
     """
     Applies common feature engineering steps needed for analysis and prediction.
